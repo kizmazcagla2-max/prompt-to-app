@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stil & Ortam Analizörü</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .loader { border-top-color: #6366f1; animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useRef } = React;
+
+        const App = () => {
+            const [previewUrl, setPreviewUrl] = useState(null);
+            const [base64Data, setBase64Data] = useState(null);
+            const [mimeType, setMimeType] = useState(null);
+            const [promptResult, setPromptResult] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+            const [error, setError] = useState('');
+            const [copied, setCopied] = useState(false);
+            const fileInputRef = useRef(null);
+
+            const apiKey = ""; // BURAYA API ANAHTARINI YAPIŞTIR
+
+            const handleImageChange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setPreviewUrl(URL.createObjectURL(file));
+                setMimeType(file.type);
+                setError('');
+                setPromptResult('');
+                const reader = new FileReader();
+                reader.onloadend = () => setBase64Data(reader.result.split(',')[1]);
+                reader.readAsDataURL(file);
+            };
+
+            const generatePrompt = async () => {
+                if (!base64Data) return setError('Önce bir fotoğraf seçin.');
+                if (!apiKey) return setError('Lütfen kodun içindeki apiKey kısmına anahtarınızı ekleyin.');
+                
+                setIsLoading(true);
+                setError('');
+                
+                const payload = {
+                    contents: [{
+                        parts: [
+                            { text: "Bu fotoğrafı analiz et. KESİNLİKLE yüz, saç, vücut tipi veya yaş gibi fiziksel özellikleri belirtme. Sadece kıyafetleri, kişinin pozunu ve bulunduğu ortamı/mekanı kısa bir yapay zeka promptu olarak yaz." },
+                            { inlineData: { mimeType, data: base64Data } }
+                        ]
+                    }]
+                };
+
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await response.json();
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) setPromptResult(text.trim());
+                    else throw new Error();
+                } catch (err) {
+                    setError('Hata oluştu. Anahtarınızı kontrol edin.');
+                }
+                setIsLoading(false);
+            };
+
+            const copyToClipboard = () => {
+                const el = document.createElement('textarea');
+                el.value = promptResult;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            };
+
+            return (
+                <div className="min-h-screen p-4 flex items-center justify-center">
+                    <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-100">
+                        <div className="bg-indigo-600 p-8 text-white text-center">
+                            <h1 className="text-2xl font-bold italic tracking-tight">PROMPT GEN</h1>
+                            <p className="text-indigo-100 text-sm mt-1 opacity-80">Giyim • Poz • Ortam</p>
+                        </div>
+                        
+                        <div className="p-6 space-y-6">
+                            <div 
+                                onClick={() => fileInputRef.current.click()}
+                                className="aspect-square border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center cursor-pointer bg-slate-50 hover:bg-slate-100 transition-all overflow-hidden"
+                            >
+                                <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
+                                {previewUrl ? (
+                                    <img src={previewUrl} className="w-full h-full object-cover" />
+                                ) : (
+                                    <div className="text-center p-4">
+                                        <div className="text-4xl mb-2">📸</div>
+                                        <p className="text-slate-500 font-medium">Fotoğraf Yükle</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {error && <div className="text-red-500 text-sm bg-red-50 p-3 rounded-xl border border-red-100">{error}</div>}
+
+                            <button 
+                                onClick={generatePrompt}
+                                disabled={isLoading || !base64Data}
+                                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 active:scale-95 transition-all disabled:bg-slate-300"
+                            >
+                                {isLoading ? 'Analiz Ediliyor...' : 'PROMPT OLUŞTUR'}
+                            </button>
+
+                            {promptResult && (
+                                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 animate-pulse-once">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sonuç</span>
+                                        <button onClick={copyToClipboard} className="text-indigo-600 text-sm font-bold">
+                                            {copied ? '✅ Kopyalandı' : '📄 Kopyala'}
+                                        </button>
+                                    </div>
+                                    <p className="text-slate-700 text-sm leading-relaxed">{promptResult}</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
+
